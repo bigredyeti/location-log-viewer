@@ -224,15 +224,59 @@ function render() {
   renderTable();
 }
 
+const DAY_COLORS = [
+  '#185FA5','#1D9E75','#D85A30','#8B5CF6','#D4537E',
+  '#BA7517','#0891B2','#65A30D','#DC2626','#7C3AED'
+];
+
+function getDayKey(p) {
+  return p.ts ? toDateInput(p.ts) : 'unknown';
+}
+
+function buildDayColorMap(points) {
+  const days = [...new Set(points.map(getDayKey))].sort();
+  const m = {};
+  days.forEach((d, i) => m[d] = DAY_COLORS[i % DAY_COLORS.length]);
+  return m;
+}
+
+function renderLegend(dayColorMap) {
+  let el = document.getElementById('map-legend');
+  if (!el) {
+    el = document.createElement('div');
+    el.id = 'map-legend';
+    el.style.cssText = 'position:absolute;bottom:24px;right:10px;z-index:1000;background:white;border-radius:8px;border:1px solid #e0e0e0;padding:8px 12px;font-size:12px;max-height:200px;overflow-y:auto;';
+    document.getElementById('map').appendChild(el);
+  }
+  const entries = Object.entries(dayColorMap);
+  if (entries.length <= 1) { el.style.display = 'none'; return; }
+  el.style.display = 'block';
+  el.innerHTML = entries.map(([date, color]) => {
+    const d = new Date(date + 'T12:00:00');
+    const label = d.toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' });
+    return `<div style="display:flex;align-items:center;gap:7px;margin-bottom:4px">
+      <div style="width:12px;height:12px;border-radius:50%;background:${color};flex-shrink:0"></div>
+      <span style="color:#1c1c1e">${label}</span>
+    </div>`;
+  }).join('');
+}
+
 function renderMap() {
   markers.forEach(m => map.removeLayer(m));
   markers = [];
 
-  if (!filteredPoints.length) return;
+  if (!filteredPoints.length) {
+    const el = document.getElementById('map-legend');
+    if (el) el.style.display = 'none';
+    return;
+  }
+
+  const dayColorMap = buildDayColorMap(filteredPoints);
+  renderLegend(dayColorMap);
 
   const bounds = [];
   filteredPoints.forEach((p, i) => {
-    const color = i === 0 ? '#185FA5' : '#1D9E75';
+    const color = dayColorMap[getDayKey(p)] || '#185FA5';
     const marker = L.circleMarker([p.lat, p.lng], {
       radius: 8,
       fillColor: color,
@@ -242,7 +286,6 @@ function renderMap() {
       fillOpacity: 0.9
     }).addTo(map);
 
-    const label = [formatDisplay(p.ts), p.city, p.postcode].filter(Boolean).join(' · ');
     marker.bindPopup(`<strong>${p.city || 'Location'}</strong><br>${formatDisplay(p.ts)}<br>${p.postcode}<br><small>${p.lat.toFixed(5)}, ${p.lng.toFixed(5)}</small>`);
     marker.on('click', () => selectRow(i));
     markers.push(marker);
@@ -266,20 +309,23 @@ function renderTable() {
     body.innerHTML = '<div class="empty"><div class="icon">📭</div><div>No locations match your filters</div></div>';
     return;
   }
+  const dayColorMap = buildDayColorMap(filteredPoints);
   body.innerHTML = `<table>
     <thead><tr>
       <th>#</th><th>Date &amp; Time</th><th>Latitude</th><th>Longitude</th><th>City</th><th>Postcode</th>
     </tr></thead>
     <tbody>
-    ${filteredPoints.map((p, i) => `
-      <tr id="row-${i}" onclick="selectRow(${i})">
-        <td><span class="pill">${i+1}</span></td>
+    ${filteredPoints.map((p, i) => {
+      const color = dayColorMap[getDayKey(p)] || '#185FA5';
+      return `<tr id="row-${i}" onclick="selectRow(${i})">
+        <td><span style="display:inline-flex;align-items:center;gap:6px"><span style="width:10px;height:10px;border-radius:50%;background:${color};display:inline-block;flex-shrink:0"></span>${i+1}</span></td>
         <td>${formatDisplay(p.ts)}</td>
         <td>${p.lat.toFixed(6)}</td>
         <td>${p.lng.toFixed(6)}</td>
         <td>${p.city || '—'}</td>
         <td>${p.postcode || '—'}</td>
-      </tr>`).join('')}
+      </tr>`;
+    }).join('')}
     </tbody>
   </table>`;
 }
