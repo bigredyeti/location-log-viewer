@@ -1,0 +1,343 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Location Log Viewer</title>
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"/>
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; background: #f5f5f7; color: #1c1c1e; }
+  h1 { font-size: 20px; font-weight: 600; }
+  .header { background: white; padding: 16px 20px; border-bottom: 1px solid #e0e0e0; display: flex; align-items: center; justify-content: space-between; }
+  .header-right { display: flex; align-items: center; gap: 10px; }
+  .container { padding: 16px 20px; max-width: 1200px; margin: 0 auto; }
+  .stats { display: grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); gap: 10px; margin-bottom: 16px; }
+  .stat { background: white; border-radius: 10px; padding: 12px 16px; border: 1px solid #e0e0e0; }
+  .stat .label { font-size: 12px; color: #888; margin-bottom: 4px; }
+  .stat .value { font-size: 22px; font-weight: 600; color: #1c1c1e; }
+  .stat .sub { font-size: 12px; color: #555; margin-top: 2px; }
+  .toolbar { background: white; border-radius: 10px; padding: 12px 16px; margin-bottom: 16px; border: 1px solid #e0e0e0; display: flex; flex-wrap: wrap; gap: 12px; align-items: center; }
+  .toolbar label { font-size: 13px; color: #555; }
+  .toolbar input[type=date], .toolbar select { font-size: 13px; padding: 6px 10px; border: 1px solid #d0d0d0; border-radius: 8px; background: white; color: #1c1c1e; }
+  .toolbar input[type=text] { font-size: 13px; padding: 6px 10px; border: 1px solid #d0d0d0; border-radius: 8px; background: white; color: #1c1c1e; width: 160px; }
+  .btn { font-size: 13px; padding: 7px 14px; border: 1px solid #d0d0d0; border-radius: 8px; background: white; color: #1c1c1e; cursor: pointer; display: inline-flex; align-items: center; gap: 6px; }
+  .btn:hover { background: #f0f0f0; }
+  .btn.primary { background: #007AFF; color: white; border-color: #007AFF; }
+  .btn.primary:hover { background: #0066cc; }
+  #file-input { display: none; }
+  #map { width: 100%; height: 480px; border-radius: 10px; border: 1px solid #e0e0e0; margin-bottom: 16px; z-index: 0; }
+  .table-wrap { background: white; border-radius: 10px; border: 1px solid #e0e0e0; overflow: hidden; }
+  table { width: 100%; border-collapse: collapse; font-size: 13px; }
+  thead { background: #f5f5f7; }
+  th { text-align: left; padding: 10px 14px; font-weight: 500; color: #555; border-bottom: 1px solid #e0e0e0; white-space: nowrap; }
+  td { padding: 9px 14px; border-bottom: 1px solid #f0f0f0; color: #1c1c1e; }
+  tr:last-child td { border-bottom: none; }
+  tr:hover td { background: #f9f9f9; cursor: pointer; }
+  tr.selected td { background: #e8f0fe; }
+  .empty { text-align: center; padding: 60px 20px; color: #888; }
+  .empty .icon { font-size: 48px; margin-bottom: 12px; opacity: 0.3; }
+  .pill { display: inline-block; font-size: 11px; padding: 2px 8px; border-radius: 20px; background: #e8f0fe; color: #1a56b0; font-weight: 500; }
+  .export-row { display: flex; justify-content: flex-end; padding: 10px 16px; border-top: 1px solid #f0f0f0; }
+  #no-map-msg { display: none; text-align: center; padding: 40px; color: #888; background: #f5f5f7; border-radius: 10px; margin-bottom: 16px; }
+</style>
+</head>
+<body>
+
+<div class="header">
+  <h1>📍 Location Log Viewer</h1>
+  <div class="header-right">
+    <label class="btn primary" for="file-input">⬆ Load CSV</label>
+    <input type="file" id="file-input" accept=".csv,.txt">
+    <button class="btn" id="demo-btn">Try demo data</button>
+  </div>
+</div>
+
+<div class="container">
+  <div class="stats">
+    <div class="stat"><div class="label">Showing</div><div class="value" id="stat-shown">0</div><div class="sub">locations</div></div>
+    <div class="stat"><div class="label">Total saved</div><div class="value" id="stat-total">0</div><div class="sub">all time</div></div>
+    <div class="stat"><div class="label">First logged</div><div class="value" style="font-size:15px;padding-top:4px" id="stat-first">—</div></div>
+    <div class="stat"><div class="label">Last logged</div><div class="value" style="font-size:15px;padding-top:4px" id="stat-last">—</div></div>
+  </div>
+
+  <div class="toolbar">
+    <label>From</label>
+    <input type="date" id="from-date">
+    <label>To</label>
+    <input type="date" id="to-date">
+    <label>Search</label>
+    <input type="text" id="search-box" placeholder="City or postcode…">
+    <select id="sort-select">
+      <option value="desc">Newest first</option>
+      <option value="asc">Oldest first</option>
+    </select>
+    <button class="btn" id="reset-btn">Reset filters</button>
+  </div>
+
+  <div id="no-map-msg">Load a CSV file to view your locations on the map.</div>
+  <div id="map"></div>
+
+  <div class="table-wrap">
+    <div id="table-body">
+      <div class="empty"><div class="icon">🗺</div><div>Load your LocationLog.csv file to get started</div></div>
+    </div>
+    <div class="export-row">
+      <button class="btn" id="export-btn">⬇ Export filtered CSV</button>
+    </div>
+  </div>
+</div>
+
+<script>
+let map = L.map('map').setView([51.5, -0.12], 6);
+L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+  attribution: '© <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
+}).addTo(map);
+
+let allPoints = [];
+let filteredPoints = [];
+let markers = [];
+let selectedIdx = null;
+
+const DEMO = [
+  { ts: '10 Jun 2026 at 09:32', lat: 51.5074, lng: -0.1278, city: 'London', postcode: 'WC2N 5DU' },
+  { ts: '10 Jun 2026 at 13:10', lat: 51.5155, lng: -0.1416, city: 'London', postcode: 'W1D 3QF' },
+  { ts: '11 Jun 2026 at 09:05', lat: 51.7520, lng: -1.2577, city: 'Oxford', postcode: 'OX1 2JD' },
+  { ts: '11 Jun 2026 at 14:45', lat: 51.4545, lng: -2.5879, city: 'Bristol', postcode: 'BS1 4ST' },
+  { ts: '12 Jun 2026 at 08:55', lat: 53.4808, lng: -2.2426, city: 'Manchester', postcode: 'M1 1AE' },
+  { ts: '12 Jun 2026 at 17:30', lat: 53.8008, lng: -1.5491, city: 'Leeds', postcode: 'LS1 1BA' },
+  { ts: '13 Jun 2026 at 11:20', lat: 52.4862, lng: -1.8904, city: 'Birmingham', postcode: 'B1 1BB' },
+];
+
+function parseDate(str) {
+  if (!str) return null;
+  str = str.trim().replace(/"/g, '');
+  // Try ISO format: 2026-06-10T14:32:00
+  let d = new Date(str);
+  if (!isNaN(d)) return d;
+  // Try "10 Jun 2026 at 13:31" or "10 Jun 2026 at 13:31:00"
+  let m = str.match(/(\d{1,2})\s+(\w+)\s+(\d{4})\s+at\s+(\d{1,2}):(\d{2})(?::(\d{2}))?/i);
+  if (m) {
+    return new Date(`${m[2]} ${m[1]} ${m[3]} ${m[4]}:${m[5]}:${m[6]||'00'}`);
+  }
+  // Try "10/06/2026 13:31"
+  m = str.match(/(\d{1,2})\/(\d{1,2})\/(\d{4})\s+(\d{1,2}):(\d{2})/);
+  if (m) return new Date(`${m[3]}-${m[2]}-${m[1]}T${m[4]}:${m[5]}:00`);
+  return null;
+}
+
+function formatDisplay(d) {
+  if (!d) return '—';
+  return d.toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' })
+    + ' ' + d.toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' });
+}
+
+function toDateInput(d) {
+  if (!d) return '';
+  return d.toISOString().split('T')[0];
+}
+
+function parseCSV(text) {
+  const lines = text.trim().split('\n').filter(l => l.trim());
+  if (!lines.length) return [];
+
+  // Find header row wherever it is
+  let headerIdx = lines.findIndex(l => l.toLowerCase().includes('latitude') || l.toLowerCase().includes('lat'));
+  if (headerIdx < 0) headerIdx = 0;
+
+  // Auto-detect delimiter: tab or comma
+  const delim = lines[headerIdx].includes('\t') ? '\t' : ',';
+
+  const header = lines[headerIdx].toLowerCase().split(delim).map(h => h.trim().replace(/"/g, ''));
+  const tsIdx = header.findIndex(h => h.includes('timestamp') || h.includes('time') || h.includes('date'));
+  const latIdx = header.findIndex(h => h === 'latitude' || h === 'lat');
+  const lngIdx = header.findIndex(h => h === 'longitude' || h === 'lng' || h === 'lon');
+  const cityIdx = header.findIndex(h => h.includes('city') || h.includes('town'));
+  const pcIdx = header.findIndex(h => h.includes('post') || h.includes('zip'));
+
+  if (latIdx < 0 || lngIdx < 0) return null;
+
+  const points = [];
+  for (let i = 0; i < lines.length; i++) {
+    if (i === headerIdx) continue;
+    // Handle quoted fields
+    const cols = [];
+    let cur = '', inQ = false;
+    for (let c of lines[i]) {
+      if (c === '"') { inQ = !inQ; }
+      else if (c === delim && !inQ) { cols.push(cur.trim()); cur = ''; }
+      else cur += c;
+    }
+    cols.push(cur.trim());
+
+    const lat = parseFloat(cols[latIdx]);
+    const lng = parseFloat(cols[lngIdx]);
+    if (isNaN(lat) || isNaN(lng)) continue;
+
+    const tsRaw = tsIdx >= 0 ? cols[tsIdx] : '';
+    const parsed = parseDate(tsRaw);
+
+    points.push({
+      ts: parsed,
+      tsRaw,
+      lat, lng,
+      city: cityIdx >= 0 ? cols[cityIdx] || '' : '',
+      postcode: pcIdx >= 0 ? cols[pcIdx] || '' : '',
+    });
+  }
+  return points;
+}
+
+function applyFilters() {
+  const from = document.getElementById('from-date').value;
+  const to = document.getElementById('to-date').value;
+  const search = document.getElementById('search-box').value.toLowerCase().trim();
+  const sort = document.getElementById('sort-select').value;
+
+  filteredPoints = allPoints.filter(p => {
+    if (from && p.ts && toDateInput(p.ts) < from) return false;
+    if (to && p.ts && toDateInput(p.ts) > to) return false;
+    if (search && !p.city.toLowerCase().includes(search) && !p.postcode.toLowerCase().includes(search)) return false;
+    return true;
+  });
+
+  filteredPoints.sort((a, b) => {
+    if (!a.ts && !b.ts) return 0;
+    if (!a.ts) return 1;
+    if (!b.ts) return -1;
+    return sort === 'asc' ? a.ts - b.ts : b.ts - a.ts;
+  });
+
+  render();
+}
+
+function render() {
+  document.getElementById('stat-shown').textContent = filteredPoints.length;
+  document.getElementById('stat-total').textContent = allPoints.length;
+
+  const sorted = [...allPoints].filter(p => p.ts).sort((a,b) => a.ts - b.ts);
+  document.getElementById('stat-first').textContent = sorted.length ? formatDisplay(sorted[0].ts) : '—';
+  document.getElementById('stat-last').textContent = sorted.length ? formatDisplay(sorted[sorted.length-1].ts) : '—';
+
+  renderMap();
+  renderTable();
+}
+
+function renderMap() {
+  markers.forEach(m => map.removeLayer(m));
+  markers = [];
+
+  if (!filteredPoints.length) return;
+
+  const bounds = [];
+  filteredPoints.forEach((p, i) => {
+    const color = i === 0 ? '#185FA5' : '#1D9E75';
+    const marker = L.circleMarker([p.lat, p.lng], {
+      radius: 8,
+      fillColor: color,
+      color: 'white',
+      weight: 2,
+      opacity: 1,
+      fillOpacity: 0.9
+    }).addTo(map);
+
+    const label = [formatDisplay(p.ts), p.city, p.postcode].filter(Boolean).join(' · ');
+    marker.bindPopup(`<strong>${p.city || 'Location'}</strong><br>${formatDisplay(p.ts)}<br>${p.postcode}<br><small>${p.lat.toFixed(5)}, ${p.lng.toFixed(5)}</small>`);
+    marker.on('click', () => selectRow(i));
+    markers.push(marker);
+    bounds.push([p.lat, p.lng]);
+  });
+
+  if (bounds.length) map.fitBounds(bounds, { padding: [40, 40] });
+}
+
+function selectRow(i) {
+  selectedIdx = i;
+  document.querySelectorAll('tr.selected').forEach(r => r.classList.remove('selected'));
+  const row = document.getElementById('row-' + i);
+  if (row) { row.classList.add('selected'); row.scrollIntoView({ block: 'nearest' }); }
+  if (markers[i]) { markers[i].openPopup(); map.panTo([filteredPoints[i].lat, filteredPoints[i].lng]); }
+}
+
+function renderTable() {
+  const body = document.getElementById('table-body');
+  if (!filteredPoints.length) {
+    body.innerHTML = '<div class="empty"><div class="icon">📭</div><div>No locations match your filters</div></div>';
+    return;
+  }
+  body.innerHTML = `<table>
+    <thead><tr>
+      <th>#</th><th>Date &amp; Time</th><th>Latitude</th><th>Longitude</th><th>City</th><th>Postcode</th>
+    </tr></thead>
+    <tbody>
+    ${filteredPoints.map((p, i) => `
+      <tr id="row-${i}" onclick="selectRow(${i})">
+        <td><span class="pill">${i+1}</span></td>
+        <td>${formatDisplay(p.ts)}</td>
+        <td>${p.lat.toFixed(6)}</td>
+        <td>${p.lng.toFixed(6)}</td>
+        <td>${p.city || '—'}</td>
+        <td>${p.postcode || '—'}</td>
+      </tr>`).join('')}
+    </tbody>
+  </table>`;
+}
+
+function loadPoints(pts) {
+  allPoints = pts;
+  const withDates = pts.filter(p => p.ts).sort((a,b) => a.ts - b.ts);
+  if (withDates.length) {
+    document.getElementById('from-date').value = toDateInput(withDates[0].ts);
+    document.getElementById('to-date').value = toDateInput(withDates[withDates.length-1].ts);
+  }
+  applyFilters();
+}
+
+document.getElementById('demo-btn').addEventListener('click', () => {
+  loadPoints(DEMO.map(d => ({ ...d, ts: parseDate(d.ts), tsRaw: d.ts })));
+});
+
+document.getElementById('file-input').addEventListener('change', e => {
+  const file = e.target.files[0];
+  if (!file) return;
+  const reader = new FileReader();
+  reader.onload = ev => {
+    const pts = parseCSV(ev.target.result);
+    if (!pts) { alert('Could not read CSV. Expected columns: timestamp, latitude, longitude'); return; }
+    if (!pts.length) { alert('No valid location rows found in the file.'); return; }
+    loadPoints(pts);
+  };
+  reader.readAsText(file);
+});
+
+document.getElementById('reset-btn').addEventListener('click', () => {
+  document.getElementById('search-box').value = '';
+  document.getElementById('sort-select').value = 'desc';
+  const withDates = allPoints.filter(p => p.ts).sort((a,b) => a.ts - b.ts);
+  if (withDates.length) {
+    document.getElementById('from-date').value = toDateInput(withDates[0].ts);
+    document.getElementById('to-date').value = toDateInput(withDates[withDates.length-1].ts);
+  }
+  applyFilters();
+});
+
+document.getElementById('export-btn').addEventListener('click', () => {
+  if (!filteredPoints.length) return;
+  const rows = ['timestamp,latitude,longitude,city,postcode',
+    ...filteredPoints.map(p => `"${p.tsRaw}",${p.lat},${p.lng},"${p.city}","${p.postcode}"`)
+  ];
+  const blob = new Blob([rows.join('\n')], { type: 'text/csv' });
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  a.download = 'LocationLog_filtered.csv';
+  a.click();
+});
+
+['from-date','to-date','sort-select'].forEach(id => {
+  document.getElementById(id).addEventListener('change', applyFilters);
+});
+document.getElementById('search-box').addEventListener('input', applyFilters);
+</script>
+</body>
+</html>
