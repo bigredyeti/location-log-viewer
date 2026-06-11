@@ -261,6 +261,24 @@ function renderLegend(dayColorMap) {
   }).join('');
 }
 
+function buildDayCounters(points) {
+  const counters = {};
+  const result = [];
+  // Sort by time to assign numbers chronologically per day
+  const sorted = points.map((p, i) => ({ p, i })).sort((a, b) => {
+    if (!a.p.ts && !b.p.ts) return 0;
+    if (!a.p.ts) return 1;
+    if (!b.p.ts) return -1;
+    return a.p.ts - b.p.ts;
+  });
+  sorted.forEach(({ p, i }) => {
+    const day = getDayKey(p);
+    counters[day] = (counters[day] || 0) + 1;
+    result[i] = counters[day];
+  });
+  return result;
+}
+
 function renderMap() {
   markers.forEach(m => map.removeLayer(m));
   markers = [];
@@ -272,20 +290,22 @@ function renderMap() {
   }
 
   const dayColorMap = buildDayColorMap(filteredPoints);
+  const dayNums = buildDayCounters(filteredPoints);
   renderLegend(dayColorMap);
 
   const bounds = [];
   filteredPoints.forEach((p, i) => {
     const color = dayColorMap[getDayKey(p)] || '#185FA5';
-    const marker = L.circleMarker([p.lat, p.lng], {
-      radius: 8,
-      fillColor: color,
-      color: 'white',
-      weight: 2,
-      opacity: 1,
-      fillOpacity: 0.9
-    }).addTo(map);
+    const num = dayNums[i] || (i + 1);
 
+    const icon = L.divIcon({
+      className: '',
+      html: `<div style="width:24px;height:24px;border-radius:50%;background:${color};border:2px solid white;display:flex;align-items:center;justify-content:center;font-size:11px;font-weight:600;color:white;font-family:-apple-system,sans-serif;box-shadow:0 1px 4px rgba(0,0,0,0.3)">${num}</div>`,
+      iconSize: [24, 24],
+      iconAnchor: [12, 12]
+    });
+
+    const marker = L.marker([p.lat, p.lng], { icon }).addTo(map);
     marker.bindPopup(`<strong>${p.city || 'Location'}</strong><br>${formatDisplay(p.ts)}<br>${p.postcode}<br><small>${p.lat.toFixed(5)}, ${p.lng.toFixed(5)}</small>`);
     marker.on('click', () => selectRow(i));
     markers.push(marker);
@@ -310,6 +330,7 @@ function renderTable() {
     return;
   }
   const dayColorMap = buildDayColorMap(filteredPoints);
+  const dayNums = buildDayCounters(filteredPoints);
   body.innerHTML = `<table>
     <thead><tr>
       <th>#</th><th>Date &amp; Time</th><th>Latitude</th><th>Longitude</th><th>City</th><th>Postcode</th>
@@ -317,8 +338,9 @@ function renderTable() {
     <tbody>
     ${filteredPoints.map((p, i) => {
       const color = dayColorMap[getDayKey(p)] || '#185FA5';
+      const num = dayNums[i] || (i + 1);
       return `<tr id="row-${i}" onclick="selectRow(${i})">
-        <td><span style="display:inline-flex;align-items:center;gap:6px"><span style="width:10px;height:10px;border-radius:50%;background:${color};display:inline-block;flex-shrink:0"></span>${i+1}</span></td>
+        <td><span style="display:inline-flex;align-items:center;justify-content:center;width:22px;height:22px;border-radius:50%;background:${color};color:white;font-size:11px;font-weight:600">${num}</span></td>
         <td>${formatDisplay(p.ts)}</td>
         <td>${p.lat.toFixed(6)}</td>
         <td>${p.lng.toFixed(6)}</td>
