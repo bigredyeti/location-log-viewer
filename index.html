@@ -24,6 +24,7 @@
   .toolbar input[type=text] { font-size: 13px; padding: 6px 10px; border: 1px solid #d0d0d0; border-radius: 8px; background: white; color: #1c1c1e; width: 160px; }
   .btn { font-size: 13px; padding: 7px 14px; border: 1px solid #d0d0d0; border-radius: 8px; background: white; color: #1c1c1e; cursor: pointer; display: inline-flex; align-items: center; gap: 6px; }
   .btn:hover { background: #f0f0f0; }
+  .btn.active { background: #007AFF; color: white; border-color: #007AFF; }
   .btn.primary { background: #007AFF; color: white; border-color: #007AFF; }
   .btn.primary:hover { background: #0066cc; }
   #file-input { display: none; }
@@ -63,6 +64,10 @@
   </div>
 
   <div class="toolbar">
+    <button class="btn" id="btn-today" onclick="quickFilter('today')">Today</button>
+    <button class="btn" id="btn-yesterday" onclick="quickFilter('yesterday')">Today &amp; yesterday</button>
+    <button class="btn" id="btn-week" onclick="quickFilter('week')">Last 7 days</button>
+    <div style="width:1px;height:24px;background:#e0e0e0;flex-shrink:0"></div>
     <label>From</label>
     <input type="date" id="from-date">
     <label>To</label>
@@ -136,6 +141,38 @@ function formatDisplay(d) {
 function toDateInput(d) {
   if (!d) return '';
   return d.toISOString().split('T')[0];
+}
+
+function todayStr() {
+  return toDateInput(new Date());
+}
+
+function offsetDay(n) {
+  const d = new Date();
+  d.setDate(d.getDate() + n);
+  return toDateInput(d);
+}
+
+function quickFilter(type) {
+  document.getElementById('search-box').value = '';
+  document.getElementById('sort-select').value = 'asc';
+  if (type === 'today') {
+    document.getElementById('from-date').value = todayStr();
+    document.getElementById('to-date').value = todayStr();
+  } else if (type === 'yesterday') {
+    document.getElementById('from-date').value = offsetDay(-1);
+    document.getElementById('to-date').value = todayStr();
+  } else if (type === 'week') {
+    document.getElementById('from-date').value = offsetDay(-6);
+    document.getElementById('to-date').value = todayStr();
+  }
+  // Highlight active button
+  ['btn-today','btn-yesterday','btn-week'].forEach(id => {
+    document.getElementById(id).classList.remove('active');
+  });
+  const map = { today: 'btn-today', yesterday: 'btn-yesterday', week: 'btn-week' };
+  document.getElementById(map[type]).classList.add('active');
+  applyFilters();
 }
 
 function parseCSV(text) {
@@ -379,9 +416,17 @@ document.getElementById('file-input').addEventListener('change', e => {
   reader.readAsText(file);
 });
 
+function clearQuickFilterActive() {
+  ['btn-today','btn-yesterday','btn-week'].forEach(id => {
+    const el = document.getElementById(id);
+    if (el) el.classList.remove('active');
+  });
+}
+
 document.getElementById('reset-btn').addEventListener('click', () => {
   document.getElementById('search-box').value = '';
   document.getElementById('sort-select').value = 'desc';
+  clearQuickFilterActive();
   const withDates = allPoints.filter(p => p.ts).sort((a,b) => a.ts - b.ts);
   if (withDates.length) {
     document.getElementById('from-date').value = toDateInput(withDates[0].ts);
@@ -402,9 +447,10 @@ document.getElementById('export-btn').addEventListener('click', () => {
   a.click();
 });
 
-['from-date','to-date','sort-select'].forEach(id => {
-  document.getElementById(id).addEventListener('change', applyFilters);
+['from-date','to-date'].forEach(id => {
+  document.getElementById(id).addEventListener('change', () => { clearQuickFilterActive(); applyFilters(); });
 });
+document.getElementById('sort-select').addEventListener('change', applyFilters);
 document.getElementById('search-box').addEventListener('input', applyFilters);
 </script>
 </body>
